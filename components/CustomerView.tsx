@@ -1,27 +1,75 @@
 
-import React, { useState } from 'react';
-import { Job, JobStatus, ServiceType, VehicleType } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Job, JobStatus, ServiceType, VehicleType, GeoLocation } from '../types';
 import { SERVICE_ICONS, SERVICE_DESCRIPTIONS } from '../constants';
 import { MapVisual } from './MapVisual';
-import { MapPin, Star, Phone, MessageSquare, ChevronRight, CheckCircle, Bike, Car, ChevronLeft } from 'lucide-react';
+import { Star, Phone, MessageSquare, ChevronRight, CheckCircle, Bike, Car, ChevronLeft, Crosshair } from 'lucide-react';
 
 interface CustomerViewProps {
   activeJob: Job | null;
   onCreateJob: (type: ServiceType, vehicle: VehicleType, lat: number, lng: number) => void;
   onCancelJob: () => void;
   onCompleteFlow: () => void;
+  technicianLocation: GeoLocation;
 }
 
-export const CustomerView: React.FC<CustomerViewProps> = ({ activeJob, onCreateJob, onCancelJob, onCompleteFlow }) => {
+export const CustomerView: React.FC<CustomerViewProps> = ({ 
+  activeJob, 
+  onCreateJob, 
+  onCancelJob, 
+  onCompleteFlow,
+  technicianLocation
+}) => {
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleType | null>(null);
   const [selectedService, setSelectedService] = useState<ServiceType>(ServiceType.TUBELESS_PLUG);
   
+  // Location State
+  const [myLocation, setMyLocation] = useState<GeoLocation | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [addressText, setAddressText] = useState("Detecting location...");
+
   // --- Logic for Steps ---
   const isSearching = activeJob?.status === JobStatus.SEARCHING;
   const isAssigned = activeJob && [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.IN_PROGRESS].includes(activeJob.status);
   const isCompleted = activeJob?.status === JobStatus.COMPLETED;
+  const mapStatus = isSearching ? 'searching' : (isAssigned ? 'tracking' : 'idle');
 
-  // Estimate price for display (Must match App.tsx logic roughly for UI preview)
+  // --- Geolocation Handler ---
+  useEffect(() => {
+    if (!activeJob) {
+      detectLocation();
+    }
+  }, []);
+
+  const detectLocation = () => {
+    setIsLocating(true);
+    setAddressText("Locating...");
+    
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setMyLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+          setAddressText("Current Location (GPS)");
+          setIsLocating(false);
+        },
+        (error) => {
+          console.error("Error getting location", error);
+          // Fallback
+          setMyLocation({ lat: 31.5102, lng: 74.3441 }); 
+          setAddressText("Liberty Market, Lahore (Default)");
+          setIsLocating(false);
+        }
+      );
+    } else {
+       setMyLocation({ lat: 31.5102, lng: 74.3441 });
+       setAddressText("Liberty Market, Lahore (Default)");
+       setIsLocating(false);
+    }
+  };
+
   const getEstimatedPrice = (type: ServiceType, vehicle: VehicleType) => {
      if (vehicle === VehicleType.BIKE) {
         if (type === ServiceType.TUBE_PATCH) return 150;
@@ -35,9 +83,15 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ activeJob, onCreateJ
      return 0;
   }
 
+  const handleCreateJob = () => {
+    if (myLocation && selectedVehicle) {
+      onCreateJob(selectedService, selectedVehicle, myLocation.lat, myLocation.lng);
+    }
+  };
+
   // --- Render Handlers ---
 
-  if (isCompleted) {
+  if (isCompleted && activeJob) {
     return (
       <div className="h-full flex flex-col bg-white p-6 relative z-10 animate-fade-in">
         <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
@@ -68,7 +122,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ activeJob, onCreateJ
 
           <button 
             onClick={() => {
-              setSelectedVehicle(null); // Reset flow
+              setSelectedVehicle(null); 
               onCompleteFlow();
             }}
             className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 transition-colors shadow-lg mt-8"
@@ -84,21 +138,26 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ activeJob, onCreateJ
     <div className="h-full flex flex-col relative">
       {/* Map Layer */}
       <MapVisual 
-        status={isSearching ? 'searching' : 'idle'} 
-        technicianLocation={isAssigned}
+        status={mapStatus} 
+        myLocation={myLocation || {lat: 0, lng: 0}}
+        targetLocation={isAssigned ? technicianLocation : undefined}
       />
 
       {/* Top Bar Overlay */}
       <div className="absolute top-0 left-0 w-full p-4 z-10 bg-gradient-to-b from-white/80 to-transparent pt-6">
-        <div className="bg-white shadow-md rounded-full px-4 py-2 flex items-center gap-2">
-           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-           <span className="text-sm font-medium text-slate-700">Liberty Market, Lahore</span>
+        <div className="bg-white shadow-md rounded-full pl-4 pr-2 py-2 flex items-center justify-between gap-2 max-w-[90%] mx-auto">
+           <div className="flex items-center gap-2 overflow-hidden">
+             <div className={`w-2 h-2 rounded-full shrink-0 ${isLocating ? 'bg-yellow-500 animate-ping' : 'bg-brand-500'}`}></div>
+             <span className="text-sm font-medium text-slate-700 truncate">{addressText}</span>
+           </div>
+           <button onClick={detectLocation} className="p-1.5 bg-slate-100 rounded-full text-slate-600 active:scale-90 transition-transform">
+             <Crosshair size={16}/>
+           </button>
         </div>
       </div>
 
       {/* Bottom Sheet / Controls */}
       <div className="mt-auto bg-white rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-20 p-6 relative">
-        {/* Drag Handle */}
         <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6"></div>
 
         {!activeJob ? (
@@ -169,10 +228,13 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ activeJob, onCreateJ
               </div>
 
               <button
-                onClick={() => onCreateJob(selectedService, selectedVehicle, 0, 0)}
-                className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-slate-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                disabled={isLocating || !myLocation}
+                onClick={handleCreateJob}
+                className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-slate-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Request Technician <ChevronRight size={20}/>
+                {isLocating ? "Detecting Location..." : (
+                   <>Request Technician <ChevronRight size={20}/></>
+                )}
               </button>
             </div>
           )
@@ -192,7 +254,12 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ activeJob, onCreateJ
               <div className="animate-fade-in">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-lg">Technician en route</h3>
-                  <span className="bg-brand-100 text-brand-700 px-2 py-1 rounded text-xs font-bold">5 min</span>
+                  <span className="bg-brand-100 text-brand-700 px-2 py-1 rounded text-xs font-bold">
+                    {/* Simple distance calc for demo */}
+                    {myLocation && technicianLocation ? 
+                      `${(Math.sqrt(Math.pow(myLocation.lat - technicianLocation.lat, 2) + Math.pow(myLocation.lng - technicianLocation.lng, 2)) * 111).toFixed(1)} km` 
+                      : 'Calculating...'}
+                  </span>
                 </div>
                 
                 <div className="flex items-center gap-4 mb-6">

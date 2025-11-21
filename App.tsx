@@ -1,11 +1,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserRole, Job, JobStatus, ServiceType, VehicleType } from './types';
+import { UserRole, Job, JobStatus, ServiceType, VehicleType, GeoLocation } from './types';
 import { CustomerView } from './components/CustomerView';
 import { TechnicianView } from './components/TechnicianView';
 import { AdminView } from './components/AdminView';
 import { Layout } from './components/Layout';
 import { AlertCircle, User, Wrench, ShieldCheck } from 'lucide-react';
+
+// Default to a location (e.g., Liberty Market Lahore) if GPS fails
+const DEFAULT_LOCATION: GeoLocation = { lat: 31.5102, lng: 74.3441 };
 
 const App: React.FC = () => {
   // --- Global State ---
@@ -16,19 +19,58 @@ const App: React.FC = () => {
   // Lifted state: Technician Online Status
   const [isTechnicianOnline, setIsTechnicianOnline] = useState(true);
   
+  // --- Real-time Location State ---
+  // In a real app, these would be synced via Firebase/Socket.io
+  const [customerLocation, setCustomerLocation] = useState<GeoLocation>(DEFAULT_LOCATION);
+  const [technicianLocation, setTechnicianLocation] = useState<GeoLocation>({ 
+    lat: DEFAULT_LOCATION.lat + 0.01, // Tech starts slightly away
+    lng: DEFAULT_LOCATION.lng + 0.01 
+  });
+
   // Ref to access current state inside setTimeout closure
   const isTechnicianOnlineRef = useRef(isTechnicianOnline);
   useEffect(() => {
     isTechnicianOnlineRef.current = isTechnicianOnline;
   }, [isTechnicianOnline]);
 
+  // --- Simulation: Move Technician towards Customer ---
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    if (activeJob && [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.IN_PROGRESS].includes(activeJob.status)) {
+      interval = setInterval(() => {
+        setTechnicianLocation(prev => {
+          const target = customerLocation;
+          const speed = 0.0001; // Movement speed factor
+          
+          // Simple linear interpolation to move tech closer to customer
+          const dx = target.lat - prev.lat;
+          const dy = target.lng - prev.lng;
+          const distance = Math.sqrt(dx*dx + dy*dy);
+
+          if (distance < 0.0005) return prev; // Arrived
+
+          return {
+            lat: prev.lat + (dx * 0.05),
+            lng: prev.lng + (dy * 0.05)
+          };
+        });
+      }, 1000); // Update every second
+    }
+
+    return () => clearInterval(interval);
+  }, [activeJob, customerLocation]);
+
+
   // --- Mock Data Store ---
-  // In a real app, this would be Firestore
   const [jobsHistory, setJobsHistory] = useState<Job[]>([]);
 
   // --- Handlers ---
 
   const createJob = (serviceType: ServiceType, vehicleType: VehicleType, lat: number, lng: number) => {
+    // Update customer location to where they requested
+    setCustomerLocation({ lat, lng });
+
     const newJob: Job = {
       id: `JOB-${Date.now().toString().slice(-6)}`,
       customerId: 'cust_123',
@@ -44,18 +86,19 @@ const App: React.FC = () => {
     setActiveJob(newJob);
     setNotification({ title: "Request Sent", message: "Searching for nearby technicians..." });
     
+    // Reset Tech location to a random nearby spot for the demo
+    setTechnicianLocation({
+      lat: lat + (Math.random() * 0.01 - 0.005),
+      lng: lng + (Math.random() * 0.01 - 0.005)
+    });
+
     // Simulate finding a tech after 3 seconds
     setTimeout(() => {
-      // Check if the job is still active (user hasn't cancelled) by checking if activeJob exists (handled in update logic mostly, but here we check flow)
-      // Importantly, check if Technician is Online
       if (isTechnicianOnlineRef.current) {
-        // Tech is online, send offer
         updateJobStatus(newJob.id, JobStatus.OFFERED);
-        // Mocking the push notification to technician
       } else {
-        // Tech is offline
         setNotification({ title: "Unavailable", message: "No online technicians found nearby." });
-        setActiveJob(null); // Cancel/Reset flow
+        setActiveJob(null);
       }
     }, 3000);
   };
@@ -67,15 +110,12 @@ const App: React.FC = () => {
       
       if (status === JobStatus.COMPLETED) {
         setJobsHistory(h => [updated, ...h]);
-        // Clear active job for customer after a delay or manual close
-        // For now, we keep it to show receipt
       }
       return updated;
     });
   };
 
   const calculatePrice = (service: ServiceType, vehicle: VehicleType) => {
-    // Pricing in PKR
     if (vehicle === VehicleType.BIKE) {
       switch (service) {
         case ServiceType.TUBE_PATCH: return 150;
@@ -84,7 +124,6 @@ const App: React.FC = () => {
         default: return 0;
       }
     } else {
-      // Car Pricing
       switch (service) {
         case ServiceType.TUBE_PATCH: return 400;
         case ServiceType.TUBELESS_PLUG: return 500;
@@ -93,8 +132,6 @@ const App: React.FC = () => {
       }
     }
   };
-
-  // --- Render Helpers ---
 
   const renderRoleIcon = (role: UserRole) => {
     switch (role) {
@@ -106,7 +143,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-slate-900">
-      {/* Dev Role Switcher - Floating */}
+      {/* Dev Role Switcher */}
       <div className="fixed top-4 right-4 z-50 bg-white/90 backdrop-blur shadow-lg rounded-full p-1 flex gap-1 border border-gray-200">
         {(Object.values(UserRole) as UserRole[]).map((role) => (
           <button
@@ -147,7 +184,8 @@ const App: React.FC = () => {
             activeJob={activeJob} 
             onCreateJob={createJob} 
             onCancelJob={() => setActiveJob(null)}
-            onCompleteFlow={() => setActiveJob(null)} // Reset after receipt
+            onCompleteFlow={() => setActiveJob(null)}
+            technicianLocation={technicianLocation}
           />
         )}
         {currentRole === UserRole.TECHNICIAN && (
@@ -156,6 +194,9 @@ const App: React.FC = () => {
             onUpdateStatus={updateJobStatus}
             isOnline={isTechnicianOnline}
             setIsOnline={setIsTechnicianOnline}
+            technicianLocation={technicianLocation}
+            setTechnicianLocation={setTechnicianLocation}
+            customerLocation={customerLocation}
           />
         )}
         {currentRole === UserRole.ADMIN && (

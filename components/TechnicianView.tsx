@@ -1,8 +1,8 @@
 
 import React, { useState, useRef } from 'react';
-import { Job, JobStatus, PhotoAnalysisResult, VehicleType } from '../types';
+import { Job, JobStatus, PhotoAnalysisResult, VehicleType, GeoLocation } from '../types';
 import { analyzeTirePhoto } from '../services/geminiService';
-import { Navigation, MapPin, Camera, Check, X, Loader2, Clock, Bike, Car } from 'lucide-react';
+import { Navigation, MapPin, Camera, Check, X, Loader2, Clock, Bike, Car, Crosshair } from 'lucide-react';
 import { MapVisual } from './MapVisual';
 
 interface TechnicianViewProps {
@@ -10,15 +10,51 @@ interface TechnicianViewProps {
   onUpdateStatus: (jobId: string, status: JobStatus, extras?: Partial<Job>) => void;
   isOnline: boolean;
   setIsOnline: (online: boolean) => void;
+  technicianLocation: GeoLocation;
+  setTechnicianLocation: (loc: GeoLocation) => void;
+  customerLocation: GeoLocation;
 }
 
-export const TechnicianView: React.FC<TechnicianViewProps> = ({ activeJob, onUpdateStatus, isOnline, setIsOnline }) => {
+export const TechnicianView: React.FC<TechnicianViewProps> = ({ 
+  activeJob, 
+  onUpdateStatus, 
+  isOnline, 
+  setIsOnline,
+  technicianLocation,
+  setTechnicianLocation,
+  customerLocation
+}) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<PhotoAnalysisResult | null>(null);
   const [otpInput, setOtpInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Handlers ---
+
+  const toggleOnline = () => {
+    if (!isOnline) {
+      // Coming Online: Get Location
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+             setTechnicianLocation({
+               lat: position.coords.latitude,
+               lng: position.coords.longitude
+             });
+             setIsOnline(true);
+          },
+          (err) => {
+            console.error(err);
+            setIsOnline(true); // Fallback to online even if loc fails (uses default)
+          }
+        );
+      } else {
+        setIsOnline(true);
+      }
+    } else {
+      setIsOnline(false);
+    }
+  };
 
   const handleAccept = () => {
     if (activeJob) onUpdateStatus(activeJob.id, JobStatus.ACCEPTED);
@@ -70,7 +106,7 @@ export const TechnicianView: React.FC<TechnicianViewProps> = ({ activeJob, onUpd
     return (
       <div className="h-full flex flex-col relative">
         {/* Background Map */}
-        <MapVisual status="idle" />
+        <MapVisual status="idle" myLocation={technicianLocation} />
 
         {/* Top Status Indicator */}
         <div className="absolute top-0 left-0 w-full p-4 z-10 bg-gradient-to-b from-white/80 to-transparent pt-6">
@@ -99,13 +135,13 @@ export const TechnicianView: React.FC<TechnicianViewProps> = ({ activeJob, onUpd
              </p>
              
              <button
-               onClick={() => setIsOnline(!isOnline)}
+               onClick={toggleOnline}
                className={`
                  w-full py-4 rounded-xl font-bold shadow-lg transition-transform active:scale-[0.98]
                  ${isOnline ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-brand-600 text-white hover:bg-brand-700'}
                `}
              >
-               {isOnline ? "Go Offline" : "Go Online"}
+               {isOnline ? "Go Offline" : "Go Online (Detect GPS)"}
              </button>
           </div>
         </div>
@@ -117,7 +153,7 @@ export const TechnicianView: React.FC<TechnicianViewProps> = ({ activeJob, onUpd
   if (activeJob.status === JobStatus.OFFERED) {
     return (
       <div className="h-full flex flex-col relative">
-        <MapVisual status="idle" />
+        <MapVisual status="idle" myLocation={technicianLocation} />
         <div className="absolute inset-x-4 bottom-8 bg-white rounded-2xl p-6 shadow-2xl border border-slate-100 animate-slide-up z-30">
           <div className="flex justify-between items-start mb-4">
              <div>
@@ -135,8 +171,8 @@ export const TechnicianView: React.FC<TechnicianViewProps> = ({ activeJob, onUpd
              </div>
           </div>
           <div className="flex gap-2 text-sm text-slate-600 mb-6">
-            <span className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded"><Clock size={14}/> 12 min</span>
-            <span className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded"><MapPin size={14}/> 3.2 km</span>
+            <span className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded"><Clock size={14}/> ~10 min</span>
+            <span className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded"><MapPin size={14}/> Nearby</span>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <button className="py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200" onClick={() => onUpdateStatus(activeJob.id, JobStatus.SEARCHING)}>Decline</button>
@@ -174,11 +210,21 @@ export const TechnicianView: React.FC<TechnicianViewProps> = ({ activeJob, onUpd
         
         {activeJob.status === JobStatus.ACCEPTED && (
            <div className="text-center space-y-6 mt-10">
-             <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
-               <Navigation size={40} />
+             {/* Mini Map for Navigation Context */}
+             <div className="h-40 w-full rounded-2xl overflow-hidden border border-slate-200 relative">
+                <MapVisual status="tracking" myLocation={technicianLocation} targetLocation={customerLocation} />
              </div>
-             <h3 className="text-xl font-bold">Navigate to Pickup</h3>
-             <p className="text-slate-500">Customer is waiting at marked location.</p>
+
+             <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
+                 <div className="text-left">
+                   <p className="text-xs text-slate-500">Distance to Customer</p>
+                   <p className="font-bold text-slate-900">
+                      {((Math.sqrt(Math.pow(technicianLocation.lat - customerLocation.lat, 2) + Math.pow(technicianLocation.lng - customerLocation.lng, 2))) * 111).toFixed(2)} km
+                   </p>
+                 </div>
+                 <Navigation className="text-brand-600" />
+             </div>
+
              <button onClick={handleArrive} className="w-full py-4 bg-brand-600 text-white rounded-xl font-bold shadow-lg hover:bg-brand-700 transition-colors">Arrived at Location</button>
            </div>
         )}
