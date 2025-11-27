@@ -99,7 +99,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
             <CheckCircle size={40} />
           </div>
           <h2 className="text-2xl font-bold text-slate-900">Job Completed!</h2>
-          <p className="text-slate-500">Your receipt has been generated.</p>
+          <p className="text-slate-500">Thank you for using Puncture Pro.</p>
           
           <div className="w-full bg-slate-50 p-4 rounded-lg border border-slate-200 text-left space-y-3">
             <div className="flex justify-between border-b pb-2 border-slate-200">
@@ -127,7 +127,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
             }}
             className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 transition-colors shadow-lg mt-8"
           >
-            Download Receipt (PDF)
+            Done
           </button>
         </div>
       </div>

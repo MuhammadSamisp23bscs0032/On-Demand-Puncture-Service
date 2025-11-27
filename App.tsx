@@ -35,7 +35,7 @@ const App: React.FC = () => {
 
   // --- Simulation: Move Technician towards Customer ---
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
 
     if (activeJob && [JobStatus.ACCEPTED, JobStatus.ARRIVED, JobStatus.IN_PROGRESS].includes(activeJob.status)) {
       interval = setInterval(() => {
