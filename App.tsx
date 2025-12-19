@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { UserRole, Job, JobStatus, ServiceType, VehicleType, GeoLocation } from './types';
 import { CustomerView } from './components/CustomerView';
@@ -142,7 +141,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans text-slate-900">
+    <div className="font-sans text-slate-900">
       {/* Dev Role Switcher */}
       <div className="fixed top-4 right-4 z-50 bg-white/90 backdrop-blur shadow-lg rounded-full p-1 flex gap-1 border border-gray-200">
         {(Object.values(UserRole) as UserRole[]).map((role) => (
